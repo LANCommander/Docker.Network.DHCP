@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-20.04
 
     env:
-      DOCKER_REPO: ghcr.io/devplayer0/docker-net-dhcp
+      DOCKER_REPO: ghcr.io/LANCommander/Docker.Network.DHCP
       PLATFORMS: linux/amd64,linux/386,linux/arm64,linux/arm/v7
 
     steps:
@@ -44,5 +44,5 @@ jobs:
           GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
         with:
           tag_name: ${{ github.ref }}
-          release_name: docker-net-dhcp ${{ steps.vars.outputs.version }}
+          release_name: Docker.Network.DHCP ${{ steps.vars.outputs.version }}
           body_path: release.md
