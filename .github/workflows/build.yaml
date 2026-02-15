@@ -4,10 +4,11 @@ on:
   push:
     branches:
       - master
+  workflow_dispatch:
 
 jobs:
   docker:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     env:
       PLUGIN_NAME: ghcr.io/LANCommander/Docker.Network.DHCP
