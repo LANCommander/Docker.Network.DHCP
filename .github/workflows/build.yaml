@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      PLUGIN_NAME: ghcr.io/LANCommander/Docker.Network.DHCP
+      PLUGIN_NAME: ghcr.io/lancommander/docker-net-dhcp
       PLATFORMS: linux/amd64,linux/386,linux/arm64,linux/arm/v7
 
     steps:
