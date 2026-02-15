@@ -1,5 +1,4 @@
-PLUGIN_NAME = ghcr.io/LANCommander/Docker.Network.DHCP
-PLUGIN_TAG ?= golang
+PLUGIN_NAME = ghcr.io/lancommander/docker-net-dhcp
 PLATFORMS ?= linux/amd64,linux/arm64/v8
 
 SOURCES = $(shell find pkg/ cmd/ -name '*.go')
