@@ -18,6 +18,13 @@ import (
 // DriverName is the name of the Docker Network Driver
 const DriverName string = "net-dhcp"
 
+// Network mode constants
+const (
+	NetworkModeBridge  = "bridge"
+	NetworkModeMacvlan = "macvlan"
+	NetworkModeIPvlan  = "ipvlan"
+)
+
 const defaultLeaseTimeout = 10 * time.Second
 
 var driverRegexp = regexp.MustCompile(`^ghcr\.io/devplayer0/docker-net-dhcp:.+$`)
@@ -30,10 +37,19 @@ func IsDHCPPlugin(driver string) bool {
 // DHCPNetworkOptions contains options for the DHCP network driver
 type DHCPNetworkOptions struct {
 	Bridge          string
+	Mode            string
 	IPv6            bool
 	LeaseTimeout    time.Duration `mapstructure:"lease_timeout"`
 	IgnoreConflicts bool          `mapstructure:"ignore_conflicts"`
 	SkipRoutes      bool          `mapstructure:"skip_routes"`
+}
+
+// NetMode returns the normalised network mode, defaulting to "bridge".
+func (opts DHCPNetworkOptions) NetMode() string {
+	if opts.Mode == "" {
+		return NetworkModeBridge
+	}
+	return opts.Mode
 }
 
 func decodeOpts(input interface{}) (DHCPNetworkOptions, error) {
@@ -61,6 +77,9 @@ type joinHint struct {
 	IPv4    *netlink.Addr
 	IPv6    *netlink.Addr
 	Gateway string
+	// IfIndex is the interface index for macvlan/ipvlan endpoints, used to locate
+	// the interface after Docker moves it into the container network namespace.
+	IfIndex int
 }
 
 // Plugin is the DHCP network plugin

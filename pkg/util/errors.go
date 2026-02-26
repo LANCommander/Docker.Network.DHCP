@@ -16,6 +16,8 @@ var (
 	ErrBridgeUsed = errors.New("bridge already in use by Docker")
 	// ErrMACAddress indicates an invalid MAC address
 	ErrMACAddress = errors.New("invalid MAC address")
+	// ErrInvalidMode indicates an unrecognised network mode was specified
+	ErrInvalidMode = errors.New("invalid mode: must be 'bridge', 'macvlan', or 'ipvlan'")
 	// ErrNoLease indicates a DHCP lease was not obtained from udhcpc
 	ErrNoLease = errors.New("udhcpc did not output a lease")
 	// ErrNoHint indicates missing state from the CreateEndpoint stage in Join
@@ -31,7 +33,7 @@ var (
 func ErrToStatus(err error) int {
 	switch {
 	case errors.Is(err, ErrIPAM), errors.Is(err, ErrBridgeRequired), errors.Is(err, ErrNotBridge),
-		errors.Is(err, ErrBridgeUsed), errors.Is(err, ErrMACAddress):
+		errors.Is(err, ErrBridgeUsed), errors.Is(err, ErrMACAddress), errors.Is(err, ErrInvalidMode):
 		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError

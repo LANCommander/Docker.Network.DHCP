@@ -27,6 +27,10 @@ type dhcpManager struct {
 
 	LastIP   *netlink.Addr
 	LastIPv6 *netlink.Addr
+	// IfIndex is the pre-move interface index for macvlan/ipvlan endpoints.
+	// The ifindex is stable across namespace moves, so it can be used to locate
+	// the interface after Docker moves it into the container namespace.
+	IfIndex int
 
 	nsPath    string
 	hostname  string
@@ -250,25 +254,37 @@ func (m *dhcpManager) Start(ctx context.Context) error {
 	}
 
 	if err := func() error {
-		hostName, oldCtrName := vethPairNames(m.joinReq.EndpointID)
-		hostLink, err := netlink.LinkByName(hostName)
-		if err != nil {
-			return fmt.Errorf("failed to find host side of veth pair: %w", err)
-		}
-		hostVeth, ok := hostLink.(*netlink.Veth)
-		if !ok {
-			return util.ErrNotVEth
-		}
+		var ctrIndex int
+		var oldCtrName string
 
-		ctrIndex, err := netlink.VethPeerIndex(hostVeth)
-		if err != nil {
-			return fmt.Errorf("failed to get container side of veth's index: %w", err)
+		if m.opts.NetMode() == NetworkModeBridge {
+			hostName, vethCtrName := vethPairNames(m.joinReq.EndpointID)
+			hostLink, err := netlink.LinkByName(hostName)
+			if err != nil {
+				return fmt.Errorf("failed to find host side of veth pair: %w", err)
+			}
+			hostVeth, ok := hostLink.(*netlink.Veth)
+			if !ok {
+				return util.ErrNotVEth
+			}
+
+			ctrIndex, err = netlink.VethPeerIndex(hostVeth)
+			if err != nil {
+				return fmt.Errorf("failed to get container side of veth's index: %w", err)
+			}
+			oldCtrName = vethCtrName
+		} else {
+			// macvlan/ipvlan: locate the interface by the index recorded during CreateEndpoint.
+			// Linux preserves ifindex when an interface moves between namespaces.
+			ctrIndex = m.IfIndex
+			oldCtrName = "dh-" + m.joinReq.EndpointID[:12]
 		}
 
 		if err := util.AwaitCondition(ctx, func() (bool, error) {
+			var err error
 			m.ctrLink, err = util.AwaitLinkByIndex(ctx, m.netHandle, ctrIndex, pollTime)
 			if err != nil {
-				return false, fmt.Errorf("failed to get link for container side of veth pair: %w", err)
+				return false, fmt.Errorf("failed to get link for container interface: %w", err)
 			}
 
 			return m.ctrLink.Attrs().Name != oldCtrName, nil
