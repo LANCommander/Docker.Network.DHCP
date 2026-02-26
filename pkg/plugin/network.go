@@ -304,7 +304,7 @@ func (p *Plugin) CreateEndpoint(ctx context.Context, r CreateEndpointRequest) (C
 		if opts.NetMode() == NetworkModeMacvlan {
 			newLink = &netlink.Macvlan{LinkAttrs: la, Mode: netlink.MACVLAN_MODE_BRIDGE}
 		} else {
-			newLink = &netlink.IpVlan{LinkAttrs: la, Mode: netlink.IPVLAN_MODE_L2}
+			newLink = &netlink.IPVlan{LinkAttrs: la, Mode: netlink.IPVLAN_MODE_L2}
 		}
 
 		if err := netlink.LinkAdd(newLink); err != nil {
