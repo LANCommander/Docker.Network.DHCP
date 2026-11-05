@@ -139,6 +139,38 @@ $
 Containers on a macvlan network appear to the rest of the LAN as independent hosts with their own MAC addresses,
 so DHCP reservations by MAC address work as expected.
 
+#### MAC address pool
+
+By default the kernel assigns each macvlan interface a random MAC address. Every time a container is recreated (e.g.
+`docker compose down && docker compose up`) it shows up as a brand-new client to the DHCP server, which can exhaust the
+DHCP pool with stale leases. To avoid this, allocate MAC addresses from a fixed pool instead:
+
+```
+$ docker network create -d ghcr.io/devplayer0/docker-net-dhcp:release-linux-amd64 --ipam-driver null \
+    -o bridge=eth0 \
+    -o mode=macvlan \
+    -o mac_prefix=02:dc:00 \
+    -o mac_pool_size=32 \
+    my-dhcp-macvlan
+```
+
+- `mac_prefix`: 1-5 hex octets that every allocated address starts with, which makes container traffic easy to
+  identify or filter (e.g. on your router or DHCP server). If omitted, the prefix defaults to `02:` followed by the last
+  three octets of the parent NIC's MAC (e.g. a parent of `aa:bb:cc:dd:ee:ff` gives `02:dd:ee:ff`), so pools on
+  different hosts sharing a LAN don't overlap. A locally administered prefix (second-lowest bit of the first octet set,
+  e.g. `02`, `06`, `0a`, ...) is strongly recommended so it can't clash with real hardware.
+- `mac_pool_size`: how many addresses are in the pool, counting up from the prefix followed by zeros. The example above
+  gives `02:dc:00:00:00:00` to `02:dc:00:00:00:1f`. This caps the number of distinct clients (and therefore leases) the network can ever create. If omitted, the pool
+  covers every address under the prefix.
+
+Setting either option enables the pool. Each new container gets the lowest-numbered address that isn't currently in use
+on the parent interface, so addresses freed by removed containers are reused and those containers get their previous
+leases back. If every address is in use, the container fails to start. A MAC passed explicitly with `--mac-address` /
+`mac_address:` is always used as-is. The pool is only supported in macvlan mode.
+
+Note that addresses are handed out in creation order, not per container: if containers are recreated in a different
+order they may swap addresses (and IPs). Use `--mac-address` for containers that need a fixed IP.
+
 ### ipvlan mode
 
 ipvlan mode is configured the same way as macvlan, but uses L2 ipvlan instead. All containers share the host NIC's MAC
@@ -218,6 +250,9 @@ networks:
       ipv6: 'true'
       ignore_conflicts: 'false'
       skip_routes: 'false'
+      # macvlan mode only, see "MAC address pool" above
+      # mac_prefix: '02:dc:00'
+      # mac_pool_size: '32'
     ipam:
       driver: 'null'
 ```
@@ -277,6 +312,12 @@ passing through a Linux bridge, so no `br_netfilter` or iptables rules are appli
 
 Each container in macvlan mode gets a unique MAC address assigned by the kernel (or a user-specified one via
 `--mac-address`), so the DHCP server sees each container as a distinct host on the network.
+
+When a MAC address pool is configured, the plugin keeps no allocation state of its own. It tries each address in the
+pool in order and keeps the first one the kernel accepts. The kernel won't bring up a macvlan interface whose MAC is
+already active on the same parent (`EADDRINUSE`), and that check covers interfaces that have moved into container
+namespaces. So the plugin reliably finds the lowest free address, even when endpoints are created concurrently, other
+networks share the parent, or the plugin has restarted.
 
 ### Flow
 

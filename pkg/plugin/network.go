@@ -3,6 +3,7 @@ package plugin
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 
@@ -51,6 +52,20 @@ func (p *Plugin) CreateNetwork(r CreateNetworkRequest) error {
 	link, err := netlink.LinkByName(opts.Bridge)
 	if err != nil {
 		return fmt.Errorf("failed to lookup interface %v: %w", opts.Bridge, err)
+	}
+
+	var pool *macPool
+	if opts.MACPoolEnabled() {
+		if opts.NetMode() != NetworkModeMacvlan {
+			return util.ErrMACPoolMode
+		}
+		if pool, err = newMACPool(opts, link.Attrs().HardwareAddr); err != nil {
+			return err
+		}
+		if pool.prefix[0]&0x02 == 0 {
+			log.WithField("mac_prefix", pool.prefix.String()).
+				Warn("mac_prefix is not a locally administered address; it may clash with real hardware")
+		}
 	}
 
 	if opts.NetMode() == NetworkModeBridge {
@@ -112,12 +127,16 @@ func (p *Plugin) CreateNetwork(r CreateNetworkRequest) error {
 		}
 	}
 
-	log.WithFields(log.Fields{
+	fields := log.Fields{
 		"network": r.NetworkID,
 		"bridge":  opts.Bridge,
 		"mode":    opts.NetMode(),
 		"ipv6":    opts.IPv6,
-	}).Info("Network created")
+	}
+	if pool != nil {
+		fields["mac_pool"] = pool.String()
+	}
+	log.WithFields(fields).Info("Network created")
 
 	return nil
 }
@@ -289,37 +308,74 @@ func (p *Plugin) CreateEndpoint(ctx context.Context, r CreateEndpointRequest) (C
 		}
 
 		ifName := "dh-" + r.EndpointID[:12]
-		la := netlink.NewLinkAttrs()
-		la.Name = ifName
-		la.ParentIndex = parentLink.Attrs().Index
-		if r.Interface.MacAddress != "" {
+
+		// createLink creates the sub-interface with the given MAC (nil = kernel-assigned) and brings it up. On failure
+		// the interface is removed again. A macvlan whose MAC is already active on the same parent fails to come up
+		// with EADDRINUSE, which the MAC pool relies on to find a free address.
+		createLink := func(mac net.HardwareAddr) (netlink.Link, error) {
+			la := netlink.NewLinkAttrs()
+			la.Name = ifName
+			la.ParentIndex = parentLink.Attrs().Index
+			la.HardwareAddr = mac
+
+			var newLink netlink.Link
+			if opts.NetMode() == NetworkModeMacvlan {
+				newLink = &netlink.Macvlan{LinkAttrs: la, Mode: netlink.MACVLAN_MODE_BRIDGE}
+			} else {
+				newLink = &netlink.IPVlan{LinkAttrs: la, Mode: netlink.IPVLAN_MODE_L2}
+			}
+
+			if err := netlink.LinkAdd(newLink); err != nil {
+				return nil, fmt.Errorf("failed to create %v interface: %w", opts.NetMode(), err)
+			}
+			// Re-fetch to get the kernel-assigned index and MAC
+			ctrLink, err := netlink.LinkByName(ifName)
+			if err != nil {
+				netlink.LinkDel(newLink)
+				return nil, fmt.Errorf("failed to get %v interface after creation: %w", opts.NetMode(), err)
+			}
+			if err := netlink.LinkSetUp(ctrLink); err != nil {
+				netlink.LinkDel(ctrLink)
+				return nil, fmt.Errorf("failed to set %v interface up: %w", opts.NetMode(), err)
+			}
+			return ctrLink, nil
+		}
+
+		var ctrLink netlink.Link
+		switch {
+		case r.Interface.MacAddress != "":
+			// An explicitly requested MAC always takes precedence over the pool
 			addr, err := net.ParseMAC(r.Interface.MacAddress)
 			if err != nil {
 				return res, util.ErrMACAddress
 			}
-			la.HardwareAddr = addr
-		}
-
-		var newLink netlink.Link
-		if opts.NetMode() == NetworkModeMacvlan {
-			newLink = &netlink.Macvlan{LinkAttrs: la, Mode: netlink.MACVLAN_MODE_BRIDGE}
-		} else {
-			newLink = &netlink.IPVlan{LinkAttrs: la, Mode: netlink.IPVLAN_MODE_L2}
-		}
-
-		if err := netlink.LinkAdd(newLink); err != nil {
-			return res, fmt.Errorf("failed to create %v interface: %w", opts.NetMode(), err)
-		}
-		if err := func() error {
-			// Re-fetch to get the kernel-assigned index and MAC
-			ctrLink, err := netlink.LinkByName(ifName)
+			if ctrLink, err = createLink(addr); err != nil {
+				return res, err
+			}
+		case opts.MACPoolEnabled():
+			pool, err := newMACPool(opts, parentLink.Attrs().HardwareAddr)
 			if err != nil {
-				return fmt.Errorf("failed to get %v interface after creation: %w", opts.NetMode(), err)
+				return res, err
 			}
-			if err := netlink.LinkSetUp(ctrLink); err != nil {
-				return fmt.Errorf("failed to set %v interface up: %w", opts.NetMode(), err)
+			for i := uint64(0); i < pool.size; i++ {
+				ctrLink, err = createLink(pool.addr(i))
+				if err == nil {
+					break
+				}
+				if !errors.Is(err, unix.EADDRINUSE) {
+					return res, err
+				}
 			}
+			if ctrLink == nil {
+				return res, fmt.Errorf("%w (%v)", util.ErrMACPoolExhausted, pool)
+			}
+		default:
+			if ctrLink, err = createLink(nil); err != nil {
+				return res, err
+			}
+		}
 
+		if err := func() error {
 			if opts.NetMode() == NetworkModeMacvlan && r.Interface.MacAddress == "" {
 				res.Interface.MacAddress = ctrLink.Attrs().HardwareAddr.String()
 			}
@@ -341,7 +397,7 @@ func (p *Plugin) CreateEndpoint(ctx context.Context, r CreateEndpointRequest) (C
 
 			return nil
 		}(); err != nil {
-			netlink.LinkDel(newLink)
+			netlink.LinkDel(ctrLink)
 			return res, err
 		}
 	}

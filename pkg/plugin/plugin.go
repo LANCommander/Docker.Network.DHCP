@@ -42,6 +42,14 @@ type DHCPNetworkOptions struct {
 	LeaseTimeout    time.Duration `mapstructure:"lease_timeout"`
 	IgnoreConflicts bool          `mapstructure:"ignore_conflicts"`
 	SkipRoutes      bool          `mapstructure:"skip_routes"`
+	// MACPrefix and MACPoolSize enable deterministic, reusable MAC allocation (macvlan only); see macpool.go
+	MACPrefix   string `mapstructure:"mac_prefix"`
+	MACPoolSize int    `mapstructure:"mac_pool_size"`
+}
+
+// MACPoolEnabled reports whether endpoints should draw MAC addresses from a fixed pool.
+func (opts DHCPNetworkOptions) MACPoolEnabled() bool {
+	return opts.MACPrefix != "" || opts.MACPoolSize != 0
 }
 
 // NetMode returns the normalised network mode, defaulting to "bridge".
