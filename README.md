@@ -7,6 +7,10 @@ When configured correctly, this allows you to spin up a container (e.g. `docker 
 access it on your network as if it was any other machine! _Probably_ not a great idea for production, but it's pretty
 handy for home deployment.
 
+This repository ([LANCommander/Docker.Network.DHCP](https://github.com/LANCommander/Docker.Network.DHCP)) is a fork of
+[devplayer0/docker-net-dhcp](https://github.com/devplayer0/docker-net-dhcp). It adds macvlan/ipvlan modes and MAC
+address pools.
+
 # Usage
 
 ## Installation
@@ -14,17 +18,17 @@ handy for home deployment.
 The plugin can be installed with the `docker plugin install` command:
 
 ```
-$ docker plugin install ghcr.io/devplayer0/docker-net-dhcp:release-linux-amd64
-Plugin "ghcr.io/devplayer0/docker-net-dhcp:release-linux-amd64" is requesting the following privileges:
+$ docker plugin install ghcr.io/lancommander/docker-net-dhcp:release-linux-amd64
+Plugin "ghcr.io/lancommander/docker-net-dhcp:release-linux-amd64" is requesting the following privileges:
  - network: [host]
  - host pid namespace: [true]
  - mount: [/var/run/docker.sock]
  - capabilities: [CAP_NET_ADMIN CAP_SYS_ADMIN CAP_SYS_PTRACE]
 Do you grant the above permissions? [y/N] y
-release-linux-amd64: Pulling from ghcr.io/devplayer0/docker-net-dhcp
+release-linux-amd64: Pulling from ghcr.io/lancommander/docker-net-dhcp
 Digest: sha256:<some hash>
 <some id>: Complete
-Installed plugin ghcr.io/devplayer0/docker-net-dhcp:release-linux-amd64
+Installed plugin ghcr.io/lancommander/docker-net-dhcp:release-linux-amd64
 $
 ```
 
@@ -100,13 +104,13 @@ $ sudo dhcpcd my-bridge
 Once the bridge is ready, create the network:
 
 ```
-$ docker network create -d ghcr.io/devplayer0/docker-net-dhcp:release-linux-amd64 --ipam-driver null -o bridge=my-bridge my-dhcp-net
+$ docker network create -d ghcr.io/lancommander/docker-net-dhcp:release-linux-amd64 --ipam-driver null -o bridge=my-bridge my-dhcp-net
 <some network id>
 $
 
 # With IPv6 enabled
 # Although `docker network create` has a `--ipv6` flag, it doesn't work with the null IPAM driver
-$ docker network create -d ghcr.io/devplayer0/docker-net-dhcp:release-linux-amd64 --ipam-driver null -o bridge=my-bridge -o ipv6=true my-dhcp-net
+$ docker network create -d ghcr.io/lancommander/docker-net-dhcp:release-linux-amd64 --ipam-driver null -o bridge=my-bridge -o ipv6=true my-dhcp-net
 <some network id>
 $
 ```
@@ -119,7 +123,7 @@ DHCP lease from your network's DHCP server. Traffic bypasses the Linux bridge la
 multicast work without any iptables configuration.
 
 ```
-$ docker network create -d ghcr.io/devplayer0/docker-net-dhcp:release-linux-amd64 --ipam-driver null \
+$ docker network create -d ghcr.io/lancommander/docker-net-dhcp:release-linux-amd64 --ipam-driver null \
     -o bridge=eth0 \
     -o mode=macvlan \
     my-dhcp-macvlan
@@ -127,7 +131,7 @@ $ docker network create -d ghcr.io/devplayer0/docker-net-dhcp:release-linux-amd6
 $
 
 # With IPv6 enabled
-$ docker network create -d ghcr.io/devplayer0/docker-net-dhcp:release-linux-amd64 --ipam-driver null \
+$ docker network create -d ghcr.io/lancommander/docker-net-dhcp:release-linux-amd64 --ipam-driver null \
     -o bridge=eth0 \
     -o mode=macvlan \
     -o ipv6=true \
@@ -146,7 +150,7 @@ By default the kernel assigns each macvlan interface a random MAC address. Every
 DHCP pool with stale leases. To avoid this, allocate MAC addresses from a fixed pool instead:
 
 ```
-$ docker network create -d ghcr.io/devplayer0/docker-net-dhcp:release-linux-amd64 --ipam-driver null \
+$ docker network create -d ghcr.io/lancommander/docker-net-dhcp:release-linux-amd64 --ipam-driver null \
     -o bridge=eth0 \
     -o mode=macvlan \
     -o mac_prefix=02:dc:00 \
@@ -177,7 +181,7 @@ ipvlan mode is configured the same way as macvlan, but uses L2 ipvlan instead. A
 address. Use this only when MAC spoofing is not permitted by the NIC or upstream switch.
 
 ```
-$ docker network create -d ghcr.io/devplayer0/docker-net-dhcp:release-linux-amd64 --ipam-driver null \
+$ docker network create -d ghcr.io/lancommander/docker-net-dhcp:release-linux-amd64 --ipam-driver null \
     -o bridge=eth0 \
     -o mode=ipvlan \
     my-dhcp-ipvlan
@@ -243,7 +247,7 @@ services:
       - dhcp
 networks:
   dhcp:
-    driver: ghcr.io/devplayer0/docker-net-dhcp:release-linux-amd64
+    driver: ghcr.io/lancommander/docker-net-dhcp:release-linux-amd64
     driver_opts:
       bridge: my-bridge
       mode: bridge        # optional; defaults to 'bridge'. Use 'macvlan' or 'ipvlan' for direct NIC attachment
@@ -276,7 +280,7 @@ Note:
 ## Debugging
 
 To read the plugin's log, do `cat /var/lib/docker/plugins/*/rootfs/var/log/net-dhcp.log` (as `root`). You can also use
-`docker plugin set ghcr.io/devplayer0/docker-net-dhcp:release-linux-amd64 LOG_LEVEL=trace` to increase log verbosity.
+`docker plugin set ghcr.io/lancommander/docker-net-dhcp:release-linux-amd64 LOG_LEVEL=trace` to increase log verbosity.
 
 # Implementation
 
